@@ -9,7 +9,7 @@
  * - Preview functionality
  */
 
-import { app } from "/scripts/app.js";
+// Note: app is available globally in ComfyUI context
 
 // Configuration constants
 const CONFIG = {
@@ -87,6 +87,7 @@ class ImageLoaderNodeHandler {
      * Find and store widget references
      */
     findWidgets() {
+        this.widgets.image = this.node.widgets?.find(w => w.name === "image");
         this.widgets.filepath = this.node.widgets?.find(w => w.name === "filepath");
         this.widgets.base64 = this.node.widgets?.find(w => w.name === "base64");
         this.widgets.pasted = this.node.widgets?.find(w => w.name === "pasted_base64");
@@ -122,6 +123,18 @@ class ImageLoaderNodeHandler {
      * Setup event listeners for input handling
      */
     setupEventListeners() {
+        // Image widget (file picker) change handler
+        if (this.widgets.image) {
+            const originalCallback = this.widgets.image.callback;
+            this.widgets.image.callback = (value) => {
+                if (value && value.trim()) {
+                    this.clearOtherInputs('image');
+                    this.updatePreview('image', value);
+                }
+                return originalCallback?.call(this.node, value);
+            };
+        }
+
         // Filepath widget change handler
         if (this.widgets.filepath) {
             const originalCallback = this.widgets.filepath.callback;
@@ -157,108 +170,96 @@ class ImageLoaderNodeHandler {
             });
         }
 
-        // Clipboard paste handler for the entire node
-        const pasteHandler = (event) => this.handlePaste(event);
-        
-        // Add paste listener to node element and its container
-        if (this.node.canvas) {
-            this.node.canvas.addEventListener('paste', pasteHandler);
-            this.eventListeners.push({
-                element: this.node.canvas,
-                type: 'paste',
-                handler: pasteHandler
-            });
-        }
-
-        // Also listen on the node's DOM element if available
-        if (this.node.element) {
-            this.node.element.addEventListener('paste', pasteHandler);
-            this.eventListeners.push({
-                element: this.node.element,
-                type: 'paste',
-                handler: pasteHandler
-            });
-        }
+        // Global paste handler for clipboard images
+        const globalPasteHandler = (event) => this.handlePaste(event);
+        document.addEventListener('paste', globalPasteHandler);
+        this.eventListeners.push({
+            element: document,
+            type: 'paste',
+            handler: globalPasteHandler
+        });
     }
 
     /**
      * Setup drag and drop functionality
      */
     setupDragAndDrop() {
-        const nodeElement = this.node.element || this.node.canvas;
+        // Add drag and drop to the node itself
+        const nodeElement = this.node;
         if (!nodeElement) return;
 
-        const dragOverHandler = (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            
-            // Check if dragged items include images
+        // Store original handlers to avoid conflicts
+        const originalOnDragOver = nodeElement.onDragOver;
+        const originalOnDragLeave = nodeElement.onDragLeave;  
+        const originalOnDrop = nodeElement.onDrop;
+
+        nodeElement.onDragOver = (event) => {
             if (this.hasImageFiles(event.dataTransfer)) {
+                event.preventDefault();
+                event.stopPropagation();
                 event.dataTransfer.dropEffect = 'copy';
                 this.setDragState(true);
+                return true;
             }
+            return originalOnDragOver?.call(nodeElement, event);
         };
 
-        const dragLeaveHandler = (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            
-            // Only clear drag state if leaving the node entirely
-            if (!nodeElement.contains(event.relatedTarget)) {
-                this.setDragState(false);
-            }
-        };
-
-        const dropHandler = (event) => {
-            event.preventDefault();
-            event.stopPropagation();
+        nodeElement.onDragLeave = (event) => {
             this.setDragState(false);
-            
-            this.handleDrop(event);
+            return originalOnDragLeave?.call(nodeElement, event);
         };
 
-        // Add drag and drop listeners
-        nodeElement.addEventListener('dragover', dragOverHandler);
-        nodeElement.addEventListener('dragleave', dragLeaveHandler);
-        nodeElement.addEventListener('drop', dropHandler);
-
-        this.eventListeners.push(
-            { element: nodeElement, type: 'dragover', handler: dragOverHandler },
-            { element: nodeElement, type: 'dragleave', handler: dragLeaveHandler },
-            { element: nodeElement, type: 'drop', handler: dropHandler }
-        );
+        nodeElement.onDrop = (event) => {
+            if (this.hasImageFiles(event.dataTransfer)) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.setDragState(false);
+                this.handleDrop(event);
+                return true;
+            }
+            return originalOnDrop?.call(nodeElement, event);
+        };
     }
 
     /**
      * Setup image preview functionality
      */
     setupPreview() {
-        // Create preview container (initially hidden)
+        // For ComfyUI nodes, we'll create a preview that appears when hovering or when an image is loaded
+        // The preview will be positioned relative to the node
         this.previewElement = document.createElement('div');
         this.previewElement.style.cssText = `
-            position: absolute;
-            top: -10px;
-            right: -10px;
+            position: fixed;
+            top: 10px;
+            right: 10px;
             width: ${CONFIG.MAX_PREVIEW_SIZE}px;
             max-height: ${CONFIG.MAX_PREVIEW_SIZE}px;
             border: 2px solid #4CAF50;
-            border-radius: 4px;
+            border-radius: 8px;
             background: #fff;
             display: none;
-            z-index: 1000;
+            z-index: 9999;
             overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            pointer-events: none;
         `;
         
-        if (this.node.element) {
-            this.node.element.style.position = 'relative';
-            this.node.element.appendChild(this.previewElement);
-        }
+        // Add to document body for better positioning
+        document.body.appendChild(this.previewElement);
+        
+        // Store reference for cleanup
+        this.node._imageLoaderPreview = this.previewElement;
     }
 
     /**
      * Handle clipboard paste events
      */
     handlePaste(event) {
+        // Only handle if this node is focused or selected
+        if (!this.isNodeActive()) {
+            return;
+        }
+
         const items = (event.clipboardData || event.originalEvent?.clipboardData)?.items;
         if (!items) return;
 
@@ -275,6 +276,18 @@ class ImageLoaderNodeHandler {
                 return;
             }
         }
+    }
+
+    /**
+     * Check if this node is currently active/selected
+     */
+    isNodeActive() {
+        // Check if the node is selected in the graph
+        if (this.node.graph && this.node.graph.canvas) {
+            return this.node.graph.canvas.selected_nodes && 
+                   this.node.graph.canvas.selected_nodes[this.node.id];
+        }
+        return false;
     }
 
     /**
@@ -328,23 +341,54 @@ class ImageLoaderNodeHandler {
     }
 
     /**
-     * Clear inputs other than the specified active one
+     * Clear inputs other than the specified active one based on precedence rules
+     * 
+     * Precedence order:
+     * 1. Clipboard paste (highest) - clears all others
+     * 2. File path - clears image upload and base64
+     * 3. Base64 - clears image upload and filepath  
+     * 4. Image upload (lowest) - clears filepath and base64
      */
     clearOtherInputs(activeInput) {
-        const inputs = ['filepath', 'base64', 'paste'];
+        // Define what each input type should clear
+        const clearingRules = {
+            'paste': ['image', 'filepath', 'base64'],          // Paste clears everything else
+            'filepath': ['image', 'base64'],                   // Filepath clears image upload and base64
+            'base64': ['image', 'filepath'],                   // Base64 clears image upload and filepath
+            'image': ['filepath', 'base64']                    // Image upload clears filepath and base64
+        };
         
-        inputs.forEach(input => {
-            if (input !== activeInput) {
-                const widget = input === 'paste' ? this.widgets.pasted : this.widgets[input];
-                if (widget && widget.value !== '') {
-                    widget.value = '';
+        const inputsToClear = clearingRules[activeInput] || [];
+        
+        inputsToClear.forEach(inputName => {
+            const widget = inputName === 'paste' ? this.widgets.pasted : this.widgets[inputName];
+            if (widget && widget.value !== '') {
+                const oldValue = widget.value;
+                widget.value = '';
+                
+                // Trigger change event to update the node
+                if (widget.callback) {
+                    widget.callback('');
                 }
+                
+                // Log the clearing action for debugging
+                console.info(`ImageLoader: Cleared ${inputName} (was: "${oldValue.substring(0, 50)}${oldValue.length > 50 ? '...' : ''}")`);
             }
         });
         
-        // Hide preview if clearing
+        // Update preview for new active input
+        this.hidePreview();
         if (activeInput !== 'paste') {
-            this.hidePreview();
+            // For non-paste inputs, update preview after a short delay
+            setTimeout(() => {
+                if (activeInput === 'image' && this.widgets.image?.value) {
+                    this.updatePreview('image', this.widgets.image.value);
+                } else if (activeInput === 'filepath' && this.widgets.filepath?.value) {
+                    this.updatePreview('filepath', this.widgets.filepath.value);
+                } else if (activeInput === 'base64' && this.widgets.base64?.value) {
+                    this.updatePreview('base64', this.widgets.base64.value);
+                }
+            }, 100);
         }
     }
 
@@ -382,22 +426,76 @@ class ImageLoaderNodeHandler {
 
         let imageUrl = '';
         
-        if (source === 'filepath') {
-            // For file paths, we can't show preview without loading the file
-            this.hidePreview();
-            return;
+        if (source === 'filepath' || source === 'image') {
+            // For file paths, try to create a preview URL
+            if (value && value.trim()) {
+                // Try to load the image for preview
+                this.loadImagePreview(value);
+                return;
+            }
         } else if (source === 'base64' || source === 'paste') {
             imageUrl = value.startsWith('data:') ? value : `data:image/png;base64,${value}`;
         }
 
         if (imageUrl) {
-            this.previewElement.innerHTML = `
-                <img src="${imageUrl}" 
-                     style="width: 100%; height: auto; max-height: ${CONFIG.MAX_PREVIEW_SIZE}px; object-fit: contain;" 
-                     alt="Preview" />
-            `;
-            this.previewElement.style.display = 'block';
+            this.showPreview(imageUrl);
+        } else {
+            this.hidePreview();
         }
+    }
+
+    /**
+     * Load image preview from file path
+     */
+    async loadImagePreview(filePath) {
+        try {
+            // For ComfyUI, we can try to access the image through the input directory
+            const imageUrl = `/view?filename=${encodeURIComponent(filePath)}&type=input`;
+            
+            // Test if the image loads
+            const img = new Image();
+            img.onload = () => {
+                this.showPreview(imageUrl);
+            };
+            img.onerror = () => {
+                // If direct access fails, show a placeholder
+                this.showPreviewPlaceholder(filePath);
+            };
+            img.src = imageUrl;
+        } catch (error) {
+            this.showPreviewPlaceholder(filePath);
+        }
+    }
+
+    /**
+     * Show image preview
+     */
+    showPreview(imageUrl) {
+        if (!this.previewElement) return;
+        
+        this.previewElement.innerHTML = `
+            <img src="${imageUrl}" 
+                 style="width: 100%; height: auto; max-height: ${CONFIG.MAX_PREVIEW_SIZE}px; object-fit: contain; display: block;" 
+                 alt="Preview" 
+                 onerror="this.parentElement.innerHTML='<div style=\\'padding: 10px; text-align: center; color: #666;\\'>Preview not available</div>'" />
+        `;
+        this.previewElement.style.display = 'block';
+    }
+
+    /**
+     * Show preview placeholder for file paths
+     */
+    showPreviewPlaceholder(fileName) {
+        if (!this.previewElement) return;
+        
+        const baseName = fileName.split(/[\\/]/).pop() || fileName;
+        this.previewElement.innerHTML = `
+            <div style="padding: 10px; text-align: center; color: #666; font-size: 12px; background: #f5f5f5; border-radius: 4px;">
+                📁 ${baseName}<br>
+                <small>File selected</small>
+            </div>
+        `;
+        this.previewElement.style.display = 'block';
     }
 
     /**
@@ -416,28 +514,44 @@ class ImageLoaderNodeHandler {
         const indicator = document.createElement('div');
         indicator.textContent = '📋 Image Pasted!';
         indicator.style.cssText = `
-            position: absolute;
+            position: fixed;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
             background: #4CAF50;
             color: white;
-            padding: 8px 16px;
-            border-radius: 4px;
-            font-size: 12px;
-            z-index: 1001;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 10000;
             pointer-events: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            animation: fadeInOut 2s ease-in-out;
         `;
         
-        if (this.node.element) {
-            this.node.element.appendChild(indicator);
-            
-            setTimeout(() => {
-                if (indicator.parentNode) {
-                    indicator.parentNode.removeChild(indicator);
+        // Add animation keyframes if not already present
+        if (!document.getElementById('pasteIndicatorStyles')) {
+            const style = document.createElement('style');
+            style.id = 'pasteIndicatorStyles';
+            style.textContent = `
+                @keyframes fadeInOut {
+                    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+                    20% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+                    80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+                    100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
                 }
-            }, CONFIG.PASTE_INDICATOR_DURATION);
+            `;
+            document.head.appendChild(style);
         }
+        
+        document.body.appendChild(indicator);
+        
+        setTimeout(() => {
+            if (indicator.parentNode) {
+                indicator.parentNode.removeChild(indicator);
+            }
+        }, CONFIG.PASTE_INDICATOR_DURATION);
     }
 
     /**
@@ -446,13 +560,34 @@ class ImageLoaderNodeHandler {
     setDragState(isDragging) {
         this.isDragging = isDragging;
         
-        if (this.node.element) {
+        if (this.node) {
             if (isDragging) {
-                this.node.element.style.outline = '2px dashed #4CAF50';
-                this.node.element.style.backgroundColor = 'rgba(76, 175, 80, 0.1)';
+                // Store original colors
+                this.originalColors = {
+                    bgcolor: this.node.bgcolor,
+                    color: this.node.color
+                };
+                
+                // Set drag state colors
+                this.node.bgcolor = "rgba(76, 175, 80, 0.2)";
+                this.node.color = "#4CAF50";
+                
+                // Force redraw
+                if (this.node.graph && this.node.graph.canvas) {
+                    this.node.graph.canvas.draw(true, true);
+                }
             } else {
-                this.node.element.style.outline = '';
-                this.node.element.style.backgroundColor = '';
+                // Restore original colors
+                if (this.originalColors) {
+                    this.node.bgcolor = this.originalColors.bgcolor;
+                    this.node.color = this.originalColors.color;
+                    this.originalColors = null;
+                }
+                
+                // Force redraw
+                if (this.node.graph && this.node.graph.canvas) {
+                    this.node.graph.canvas.draw(true, true);
+                }
             }
         }
     }
@@ -486,13 +621,18 @@ class ImageLoaderNodeHandler {
         });
         this.eventListeners = [];
 
-        // Remove preview element
+        // Remove preview element from document body
         if (this.previewElement?.parentNode) {
             this.previewElement.parentNode.removeChild(this.previewElement);
         }
 
         // Clear drag state
         this.setDragState(false);
+
+        // Clear node reference
+        if (this.node._imageLoaderPreview) {
+            delete this.node._imageLoaderPreview;
+        }
     }
 }
 
