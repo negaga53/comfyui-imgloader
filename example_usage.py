@@ -68,13 +68,18 @@ def main():
     print("3. Testing Input Precedence")
     print("-" * 20)
     
-    # Test precedence: pasted_base64 should take priority
+    # Test precedence: filepath should take priority over base64
     image_tensor, mask_tensor = loader.load_image(
         filepath="nonexistent.png",
-        base64="invalid_base64",
-        pasted_base64=test_data_url
+        base64=test_data_url
     )
-    print(f"With multiple inputs, pasted_base64 was used:")
+    print(f"With multiple inputs, filepath was attempted first (even if it fails):")
+    print(f"Image tensor shape: {image_tensor.shape}")
+    print(f"Is fallback: {image_tensor.shape == (1, 1, 1, 3)}")
+    
+    # Test with valid base64 only
+    image_tensor, mask_tensor = loader.load_image(base64=test_data_url)
+    print(f"With base64 only:")
     print(f"Image tensor shape: {image_tensor.shape}")
     print(f"Success: {image_tensor.shape != (1, 1, 1, 3)}")
     print()

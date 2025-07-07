@@ -3,8 +3,7 @@ ComfyUI Universal Image Loader Node
 
 A versatile image loader that supports loading from:
 - File paths (with file picker)
-- Base64 encoded strings  
-- Clipboard paste operations
+- Base64 encoded strings
 
 Implements proper precedence handling and error recovery.
 """
@@ -72,7 +71,6 @@ class ImageLoader:
     Features:
     - File path loading with proper validation
     - Base64 string decoding with format detection
-    - Clipboard paste support via JavaScript integration
     - Input precedence handling for API usage
     - Robust error handling and fallback behavior
     - Proper tensor formatting for ComfyUI
@@ -115,12 +113,6 @@ class ImageLoader:
                     "placeholder": "Paste base64 encoded image data here...",
                     "tooltip": "Base64 encoded image string (with or without data URL prefix)"
                 }),
-                "pasted_base64": ("STRING", {
-                    "default": "", 
-                    "multiline": False,
-                    "forceInput": True,
-                    "tooltip": "Hidden input populated by JavaScript when pasting images"
-                }),
             }
         }
     
@@ -143,27 +135,25 @@ class ImageLoader:
                 return f"Invalid image file: {image}"
         return True
     
-    def load_image(self, image: str = "", filepath: str = "", base64: str = "", pasted_base64: str = "") -> Tuple[torch.Tensor, torch.Tensor]:
+    def load_image(self, image: str = "", filepath: str = "", base64: str = "") -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Load an image from one of the available sources with precedence handling.
         
         Precedence order:
-        1. Pasted image (from clipboard via JavaScript)
-        2. Image upload (file picker)
-        3. File path
-        4. Base64 string
+        1. File path
+        2. Base64 string
+        3. Image upload (file picker)
         
         Args:
             image: Image file from file picker
             filepath: Path to image file
             base64: Base64 encoded image string
-            pasted_base64: Base64 data from clipboard paste (populated by JS)
             
         Returns:
             Tuple of (image_tensor, mask_tensor)
         """
         try:
-            image_data, source_info = self._get_image_data(image, filepath, base64, pasted_base64)
+            image_data, source_info = self._get_image_data(image, filepath, base64)
             
             if image_data is None:
                 logger.warning("No valid image source provided")
@@ -187,29 +177,19 @@ class ImageLoader:
             # Clean up GPU memory
             soft_empty_cache()
     
-    def _get_image_data(self, image: str, filepath: str, base64_str: str, pasted_base64: str) -> Tuple[Optional[bytes], str]:
+    def _get_image_data(self, image: str, filepath: str, base64_str: str) -> Tuple[Optional[bytes], str]:
         """
         Extract image data from available sources following precedence rules.
         
         Precedence order (higher precedence overrides lower):
-        1. Clipboard paste (pasted_base64) - highest precedence
-        2. File path input (filepath) - overrides image upload
-        3. Base64 string input (base64_str) - overrides image upload  
-        4. Image upload (image) - lowest precedence
+        1. File path input (filepath) - highest precedence
+        2. Base64 string input (base64_str) - overrides image upload  
+        3. Image upload (image) - lowest precedence
         
         Returns:
             Tuple of (image_data_bytes, source_description)
         """
-        # 1. Highest precedence: Pasted image from clipboard
-        if self._is_valid_input(pasted_base64):
-            try:
-                data = self._decode_base64_data(pasted_base64)
-                if data:
-                    return data, "Clipboard Paste"
-            except Exception as e:
-                logger.warning(f"Failed to decode pasted image: {e}")
-        
-        # 2. Second precedence: File path input (overrides image upload)
+        # 1. Highest precedence: File path input
         if self._is_valid_input(filepath):
             try:
                 data = self._load_file_data(filepath, use_annotated_path=False)
@@ -218,7 +198,7 @@ class ImageLoader:
             except Exception as e:
                 logger.warning(f"Failed to load file {filepath}: {e}")
         
-        # 3. Third precedence: Base64 string input (overrides image upload)
+        # 2. Second precedence: Base64 string input (overrides image upload)
         if self._is_valid_input(base64_str):
             try:
                 data = self._decode_base64_data(base64_str)
@@ -227,7 +207,7 @@ class ImageLoader:
             except Exception as e:
                 logger.warning(f"Failed to decode base64 string: {e}")
         
-        # 4. Lowest precedence: Image upload from file picker
+        # 3. Lowest precedence: Image upload from file picker
         if self._is_valid_input(image):
             try:
                 data = self._load_file_data(image, use_annotated_path=True)

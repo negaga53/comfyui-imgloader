@@ -7,8 +7,6 @@ A powerful and versatile custom node for ComfyUI that provides multiple ways to 
 ### Multiple Input Methods
 - **📁 File Path**: Load images from your local file system using ComfyUI's file picker
 - **📋 Base64**: Paste base64-encoded image strings directly into the node
-- **🖼️ Clipboard Paste**: Copy images from anywhere and paste them directly onto the node
-- **🎯 Drag & Drop**: Drag image files directly onto the node
 
 ### Smart Input Handling
 - **Input Precedence**: When multiple inputs are provided (especially via API), the node follows a clear precedence order
@@ -45,8 +43,6 @@ Search for "Universal Image Loader" in ComfyUI Manager and install.
 2. Choose your preferred input method:
    - **File Path**: Click the file selector and choose an image
    - **Base64**: Paste a base64 string into the text area
-   - **Clipboard**: Copy an image and paste it directly onto the node (Ctrl+V)
-   - **Drag & Drop**: Drag an image file onto the node
 
 ### Input Methods Details
 
@@ -61,37 +57,24 @@ Search for "Universal Image Loader" in ComfyUI Manager and install.
 - Or raw base64: `iVBORw0KGgoAAAANSUhEUgAA...`
 - Validates base64 format before processing
 
-#### 🖼️ Clipboard Paste
-- Copy any image from your browser, image editor, or file manager
-- Focus the node and press Ctrl+V (or Cmd+V on Mac)
-- Shows visual confirmation when an image is pasted
-- Automatically converts to base64 format internally
-
-#### 🎯 Drag & Drop
-- Drag image files directly from your file manager
-- Visual feedback with highlighting during drag operations
-- Supports multiple files (uses the first image)
-
 ### API Usage
 
 When using the ComfyUI API, you can provide multiple inputs. The node follows this precedence order:
 
-1. **Clipboard/Pasted Image** (highest priority)
-2. **File Path** (medium priority)  
-3. **Base64 String** (lowest priority)
+1. **File Path** (highest priority)  
+2. **Base64 String** (lowest priority)
 
 Example API payload:
 ```json
 {
   "inputs": {
     "filepath": "my_image.png",
-    "base64": "iVBORw0KGgoAAAANSUhEUgA...",
-    "pasted_base64": "data:image/png;base64,iVBORw0KGgo..."
+    "base64": "iVBORw0KGgoAAAANSUhEUgA..."
   }
 }
 ```
 
-In this case, the `pasted_base64` input would be used.
+In this case, the `filepath` input would be used.
 
 ## 🔧 Output
 
@@ -144,8 +127,6 @@ comfyui-imgloader/
 - Memory management
 
 #### JavaScript Frontend (`js/imgloader.js`)
-- Clipboard paste handling
-- Drag and drop functionality
 - UI state management
 - Visual feedback
 
@@ -163,12 +144,6 @@ comfyui-imgloader/
 #### "No valid image source found"
 - Ensure your image file exists and is readable
 - Check that base64 strings are properly formatted
-- Verify clipboard contains an image (not just a file path)
-
-#### Paste not working
-- Make sure the node is focused (click on it first)
-- Try pasting directly onto the node canvas area
-- Check browser permissions for clipboard access
 
 #### Large images causing memory issues
 - The node automatically manages GPU memory
@@ -225,8 +200,7 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 
 ### v1.0.0
 - Initial release
-- File path, base64, and clipboard paste support
-- Drag and drop functionality
+- File path and base64 support
 - Visual feedback and preview
 - Robust error handling
 - Memory management

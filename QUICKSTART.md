@@ -23,8 +23,6 @@
 2. **Choose your input method:**
    - **File**: Click the file selector button
    - **Base64**: Paste base64 data in the text area
-   - **Clipboard**: Copy an image anywhere, then paste with `Ctrl+V` on the node
-   - **Drag & Drop**: Drag an image file onto the node
 
 ### Output
 - **IMAGE**: Standard ComfyUI image tensor
@@ -37,14 +35,13 @@
   "ImageLoader": {
     "inputs": {
       "filepath": "input/my_image.png",
-      "base64": "iVBORw0KGgoAAAANSUhEUgA...",
-      "pasted_base64": "data:image/png;base64,..."
+      "base64": "iVBORw0KGgoAAAANSUhEUgA..."
     }
   }
 }
 ```
 
-**Precedence Order:** Pasted > Filepath > Base64
+**Precedence Order:** Filepath > Base64
 
 ## 🏗️ Project Structure
 
@@ -64,9 +61,9 @@ comfyui-imgloader/
 
 ## ✨ Key Features
 
-- **Multi-input support**: File, Base64, Clipboard, Drag & Drop
+- **Multi-input support**: File and Base64
 - **Smart precedence**: Clear handling when multiple inputs provided
-- **Visual feedback**: Preview, drag highlights, paste confirmation
+- **Visual feedback**: Preview and status indicators
 - **Robust error handling**: Graceful fallbacks and informative logging
 - **EXIF rotation**: Automatic image orientation correction
 - **Alpha channel support**: Proper mask extraction
@@ -77,9 +74,8 @@ comfyui-imgloader/
 ### Common Issues
 
 1. **Node not appearing**: Restart ComfyUI after installation
-2. **Paste not working**: Click on the node first, then paste
-3. **File not found**: Check file exists in `ComfyUI/input/` directory
-4. **Base64 errors**: Ensure proper format with/without data URL prefix
+2. **File not found**: Check file exists in `ComfyUI/input/` directory
+3. **Base64 errors**: Ensure proper format with/without data URL prefix
 
 ### Debug Mode
 ```bash
@@ -104,7 +100,7 @@ python3 -m pytest test_imgloader.py -v
 ### File Descriptions
 
 - **`imgloader_node.py`**: Core logic, image processing, tensor conversion
-- **`js/imgloader.js`**: UI interactions, paste/drag handlers, visual feedback
+- **`js/imgloader.js`**: UI interactions and visual feedback
 - **`__init__.py`**: ComfyUI registration and discovery
 - **`example_usage.py`**: Demonstrates programmatic usage
 - **`test_imgloader.py`**: Unit tests for validation
@@ -112,8 +108,8 @@ python3 -m pytest test_imgloader.py -v
 ### Key Improvements Over Original
 
 1. **Enhanced Error Handling**: Comprehensive try-catch with logging
-2. **Better UI Feedback**: Visual indicators, previews, animations
-3. **Advanced Features**: EXIF rotation, drag-and-drop, better base64 handling
+2. **Better UI Feedback**: Visual indicators and previews
+3. **Advanced Features**: EXIF rotation and better base64 handling
 4. **Memory Management**: Proper GPU cleanup and resource management
 5. **Extensibility**: Modular design for easy feature additions
 6. **Testing**: Unit tests and example scripts
